@@ -1,0 +1,219 @@
+---
+title: "TFR"
+author: "Jessica Cooper"
+date: "30/03/2021"
+output: ioslides_presentation
+runtime: shiny
+bibliography: [References/packages.bib]
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,
+                      warning = F,
+                      message = F,
+                      fig.retina = 3)
+revealjs::revealjs_presentation(background_transition = "zoom")
+```
+
+```{r packages}
+library(readxl)
+library(revealjs)
+library(writexl)
+library(dplyr)
+library(tidyverse)
+library(janitor)
+library(ggplot2)
+library(writexl)
+library(shinydashboard)
+library(plotly)
+library(htmlwidgets)
+library(rmdwc)
+```
+## Introduction
+
+Total Fertility Rate (TFR) is the average number of children produced per fertile woman. It is commonly taken from population censuses and is important in understanding how economic and environmental differences can impact the fertility of women in the changed area.
+
+`Our World In Data` conducted a widespread data collection method from the 1960s in order to gain knowledge of how the total fertility rate changes over the years/ in different countries. 
+
+Analysis of data () was conducted in R with the use of Rmarkdown
+
+
+## Data Import and Tidying
+
+The data used in this research was taken from Our World In data. The .xlsx file was imported into a separate 'data' file and labeled 'rawtfr'. The country names were placed onto a separate vector. The data was then re-imported as with the top three rows removed as they were junk rows, and the column names were re-labeled to the countries they represent. 
+
+I noticed when viewing the data that some countries had duplicates (i.e. UK and Wales were counted separately), so I deleted them. 
+
+```{r data import, message=F, warning=F, include=F}
+rawtfr <- read_excel("Data_Unprocessed/TFR.xlsx", sheet = "Total fertility rates") %>% 
+  janitor::clean_names()
+name <- array(rawtfr[1,])
+rawtfr <- read_excel("Data_Unprocessed/TFR.xlsx", sheet = "Total fertility rates",
+                        col_names = FALSE,
+                        skip = 3) %>% 
+  janitor::clean_names()
+names(rawtfr) <- name
+#The UK and Germany are counted multiple times into separate countries/ parts. I would like to remove the additional parts.
+rawtfr<- rawtfr[,-c(14,15, 34:36)]
+```
+
+##Data Tidying
+I also changed the file into a tidy format for R analysis. The processed data was saved as a separate file labeled 'Processed_TFR.xlsx'. There were a few countries which had missing data on certain years, which needed to be deleted in order for ggplot to correctly input the data. I ended up with a dataframe containing 3 columns (labeled "Year", "Country" and "TFR") and 1655 rows.I noticed the number of unique values within these dataframes were all 1655, and year was identified as a numerical value, not a categorical value, so I used the as.factor function to re-identify the values in order to give good values to the x axis of the ggplot.
+
+```{r tidying data, message=F, warning=F, include=F}
+#Tidying the file
+tfr <- rawtfr %>% 
+  pivot_longer(names_to = "Country",
+               values_to = "TFR",
+               cols= -c("COUNTRY"))
+names(tfr)[1]<- "Year"
+write_xlsx(tfr,"Data_Processed/Processed_TFR.xlsx")
+
+#Want to ommit the rows with NA
+tfr[tfr==0] <- NA
+tfr<-tfr[complete.cases(tfr),]
+
+tfr$Country <- as.factor(tfr$Country)
+tfr$Country <- factor(tfr$Country, levels(tfr$Country)[seq(from=32, to=0, by=-1)])
+
+tfr$Year <- as.factor(tfr$Year)
+tfr$Year <- factor(tfr$Year, levels(tfr$Year)[seq(from=0, to=60, by=1)])
+```
+
+```{r, echo=F, include=T}
+#show the structure of my dataframe
+str(tfr)
+```
+
+To learn more, see [Our World In Data](https://ourworldindata.org/fertility-rate).
+
+## Making an Interactive Plot
+
+In order to visualise TFR rates over the years, I made a line plot using ggplot showing the Total Fertility Rate by Year. As there are so many values, I made the plot interactive using ggplotly to better look at the data. This plot demonstrates a negative trend between TFR over the years. I manually set the x axis breaks as 59 is a prime number and having every year on the x axis over-crowded the graph (even if I adjusted the text angle, it looked too busy). Furthermore, as the graph is interactive, it is possible to read the specific dates mentioned easily when hovering over the graph.
+
+## Interactive Plot
+
+```{r raw plot, message=F, warning=F, include=F}
+fig1<-ggplotly(ggplot(tfr, aes(x= Year, y=TFR, group= Country, colour= Country))+
+                 geom_point()+
+                 geom_line()+
+                 scale_colour_manual(values= rainbow(32))+
+                 scale_y_continuous(limits = c(0, 5), breaks=seq(from=0,to=5,by=1))+
+                 scale_x_discrete(breaks=c(1960,1980,2000,2019))+
+                 theme_bw() + 
+                 theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                       panel.grid.minor = element_blank(), 
+                       axis.line = element_line(colour = "black")))
+fig1
+
+
+htmlwidgets::saveWidget(fig1, "Figures/fig1.html")
+```
+
+## Creating a less busy ggplot
+
+I organised countries by their continent, and produced a ggplot to see a less busy demonstrtion of total fertility rates by continent.
+
+```{r ggplot, message=F, warning=F, include=F}
+tfr_recoded <- tfr %>%
+  mutate(
+    Country = fct_collapse(
+      Country,
+      "Northern Europe" = c("Estonia","Denmark","Iceland","Finland","Norway","Sweden"),
+      "Eastern Europe" = c("Bulgaria", "Belarus", "Poland", "Lithuania", "Hungary", "Ukraine"),
+      "Western Europe" = c("Germany","United Kingdom", "France", "Switzerland", "Austria","Netherlands","Czechia", "Slovenia", "Slovakia", "Croatia"),
+      "Southern Europe" = c("Italy", "Spain", "Portugal"),
+      "Asia" = c("Taiwan", "Republic of Korea", "Japan"),
+      "America" = c("USA", "Chile", "Canada")))
+
+tfrsum <- tfr_recoded %>%
+  group_by(Year, Country) %>%
+  summarise(TFR = mean(TFR))
+
+
+fig2 <-ggplot(tfrsum, aes(x= Year, y=TFR, group= Country, colour= Country))+
+  geom_point()+
+  geom_line()+
+scale_colour_manual(values= rainbow(8))+
+  scale_y_continuous(limits = c(1, 4), breaks=seq(from=1,to=4,by=1))+
+  scale_x_discrete(breaks=c(1960,1980,2000,2019))+
+  theme_bw() + 
+  theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(colour = "black"))
+fig2
+
+ggsave("Figures/Figure2", 
+       plot = fig2, 
+       device = "jpeg",
+       width = NA, 
+       height = NA,
+       units = "in",
+       dpi = 300)
+```
+
+## Statistical Analysis
+
+In this section, I shall be testing whether the downwards trend of fertility rates seen in the graph is significant.
+
+For this, as there are 2 sets of categorical values and 1 set of numerical values. 
+
+Two options spring to mind- Chi square and Fisher's exact test. The issue with Chi square is that my values are lower than 5. A necessary assumption to fill in order to get accurate results from the Chi-square test is that the expected value in each cell is greater than 5. Therefore, I could multiply my values by 10. An issue with Fisher's exact test is that it is mostly used with 2x2 categories, and the calculations get complicated with larger tables and it would take a while for r to process the data. Furthermore, chisquare cannot be performed with missing values, as it would lead to errenous results. 
+Chi square looks at the distribution of data and concludes if the difference between the distribution is significant in two or more categories using hypotheses null and alternative. 
+
+I changed Year back to numerical data in order to be able to do a pearsons product correlation coefficient. Usually year is given as categorical data but as my data specifically looks at the years and impact on TFR I decided I could 'fudge it'. 
+
+
+```{r statistical tests, message=F, warning=F}
+tfrnum<-tfr
+tfrnum$Year <-as.numeric(tfrnum$Year)
+tfrnum %>% 
+  lm(formula = Year ~ TFR)
+cor.test(tfrnum$Year, tfrnum$TFR, 
+                    method = "pearson")
+```
+
+
+## The Financial Crisis of 2008 and impact on TFR
+
+Crippling debt, people don't want kids
+
+
+## Discussion
+
+The TFR of the world has decreased at a significant rate from 1960. This may be because mortality rates of children have decreased in those years, thus population growth has been increasing. 
+
+Measuring the fertility rates of areas using TFR can be beneficial in the fact that it accurately measures TFR in a population independent of the proportion of each sex. Furthermore, the data uses only live births and therefore only counts in completed fertility, which may not be the case when measuring pregnancy rates. 
+
+Data is missing on some years from some countries.
+
+## Conclusions
+
+Conclusions shall be put here
+
+```{r word count, message=F, warning=F, include=F}
+wc <- rmdcount("TFR.Rmd")
+wordcount <- wc$words
+```
+
+**Word Count:** `r wordcount`
+
+## References
+
+```{r references, message=F, warning=F, include=T}
+#write .bib file containing references for packages used
+knitr::write_bib(c("readxl",
+                   "rmarkdown",
+                   "revealjs",
+                   "writexl",
+                   "dplyr",
+                   "tidyverse",
+                   "janitor",
+                   "ggplot2",
+                   "writexl",
+                   "shinydashboard",
+                   "plotly",
+                   "htmlwidgets",
+                   "rmdwc"),
+                 width = 60, file = "reference.bib")
+```
